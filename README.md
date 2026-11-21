@@ -18,7 +18,7 @@ Team repository for the course **Data Pipelines with Databricks and Fabric** (Dr
 | Star | Fact table | Dimensions |
 | --- | --- | --- |
 | **Sales** | `adventure_works.default.fact_sales` (121,317 rows) | `default.dim_product`, `default.dim_sales_territory` |
-| **Purchasing** | `adventure_works.silver.fact_purchases` (8,845 rows) | `silver.dim_vendor` (+ shared `default.dim_product`) |
+| **Purchasing** | `adventure_works.gold.fact_purchases` (8,845 rows) | `gold.dim_vendor` (+ shared `default.dim_product`) |
 
 Both stars share `dim_product`, so sales and purchasing can be analyzed side by side per product (margin analysis, stock coverage).
 
@@ -31,22 +31,23 @@ The notebook `PurchasingStar_Ahmet.ipynb` builds the purchasing star with a stri
 * Load 3 raw CSVs as-is: `stg_purchase_order_detail` (8,845 rows × 11 cols), `stg_purchase_order_header` (4,012 × 13), `dim_vendor` (104 × 8)
 * `header=False` → Spark assigns generic names `_c0`, `_c1`, …; all columns stay STRING
 
-### Silver — names, types, data quality (`adventure_works.silver`)
+### Silver — cleaned staging tables only (`adventure_works.silver`)
 
 * Real column names and types taken from the `CREATE TABLE [Purchasing].…` statements in `instawdb.sql` (single source of truth)
 * SQL Server → Databricks type mapping: `int`→INT, `smallint`/`tinyint`→SMALLINT, `money`→DECIMAL(19,4), `datetime`→TIMESTAMP, `Flag`→INT
 * **Data-quality rule** on `stg_purchase_order_detail`: drop rows with NULL `ProductID` or negative `LineTotal` (0 rows dropped — source data is clean)
 
-### Gold — `fact_purchases`
+### Gold — the Purchasing Star (`adventure_works.gold`)
 
 * `stg_purchase_order_detail` ⋈ `stg_purchase_order_header` on `PurchaseOrderID`, pulling in `VendorID` and `OrderDate` from the header
 * One row per purchase-order line: fact rows (8,845) = detail rows (8,845) — the join does not fan out (`PurchaseOrderID` is unique in the header, verified before joining)
+* `dim_vendor` sits alongside the fact in `gold` — together they form the purchasing star; Silver holds only the cleaned staging tables
 
 ## Business Queries
 
 ### Query 1 — Thinnest margin between sales price and purchase price
 
-Averages each price per product first (to avoid many-to-many join distortion), then joins on `ProductID`. Top-5 thinnest margins are **all negative** — these products are sold below their purchase price:
+Averages each price per product first (to avoid many-to-many join distortion), then joins on `ProductID`. Top-5 thinnest margins are **all negative** — these products are sold below their purchase price. (HL Road Pedal and Touring Pedal tie exactly for 5th place at −14.3955; the query breaks ties by product name for a deterministic result.)
 
 | Product | Avg sales price | Avg purchase price | Margin |
 | --- | --- | --- | --- |
@@ -54,7 +55,7 @@ Averages each price per product first (to avoid many-to-many join distortion), t
 | Rear Brakes | 63.9000 | 82.8345 | −18.9345 |
 | ML Road Tire | 24.9900 | 39.4583 | −14.4683 |
 | HL Mountain Pedal | 48.5686 | 62.9895 | −14.4209 |
-| HL Road Pedal | 48.5940 | 62.9895 | −14.3955 |
+| HL Road Pedal / Touring Pedal (tied) | 48.5940 | 62.9895 | −14.3955 |
 
 ### Query 2 — Units sold vs. units purchased, by product and month
 
